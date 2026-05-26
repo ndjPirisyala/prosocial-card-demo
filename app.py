@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Pro-social Card Propagation Graph Demo", layout="wide")
 
-st.title("BoomTown Behaviour Card Analysis")
+st.title("Behaviour Card Analysis")
 
 st_autorefresh(interval=2000, key="refresh")
 
