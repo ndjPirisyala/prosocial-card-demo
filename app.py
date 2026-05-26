@@ -8,9 +8,9 @@ from io import StringIO
 
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="Pro-Social Card Graph Demo", layout="wide")
+st.set_page_config(page_title="Pro-social Card Propagation Graph Demo", layout="wide")
 
-st.title("Pro-Social Card Graph")
+st.title("BoomTown Behaviour Card Analysis")
 
 st_autorefresh(interval=2000, key="refresh")
 
@@ -79,7 +79,7 @@ graph_edges = [
     Edge(
         source=row["from"],
         target=row["to"],
-        label=f'{row["card_id"]} / {row["card_type"]}',
+        label=f'{row["card_type"]} ({row["card_id"]})',
     )
     for _, row in edges_df.iterrows()
 ]
@@ -90,6 +90,13 @@ config = Config(
     directed=True,
     physics=True,
     hierarchical=False,
+    edges={
+        "font": {
+            "size": 9,
+            # "align": "middle"
+        },
+        "smooth": True
+    }
 )
 
 agraph(nodes=nodes, edges=graph_edges, config=config)
