@@ -6,7 +6,9 @@ import requests
 import certifi
 from io import StringIO
 
-from streamlit_autorefresh import st_autorefresh
+import streamlit.components.v1 as components
+
+# from streamlit_autorefresh import st_autorefresh
 
 from pathlib import Path
 import base64
@@ -201,17 +203,13 @@ with card_col:
             )
 
 
-# st.markdown(
-#     "<hr style='border:0.5px solid rgba(255,255,255,0.14); margin: 18px 0 22px 0;'>",
-#     unsafe_allow_html=True
-# )
-
-st_autorefresh(interval=2000, key="refresh")
+# st_autorefresh(interval=2000, key="refresh")
 
 sheet_id = "1unenIebQ7hrO1tfDIYCxTVNaVPeLdb2k1EvKmeLWXYE"
 gid = "0"
 
 url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+
 
 response = requests.get(url, verify=certifi.where())
 response.raise_for_status()
@@ -393,7 +391,248 @@ with legend_col:
         unsafe_allow_html=True
     )
 
-agraph(nodes=nodes, edges=graph_edges, config=config)
+# agraph(nodes=nodes, edges=graph_edges, config=config)
+
+components.html(
+    f"""
+    <div id="graph-container" style="
+        width:100%;
+        height:560px;
+        border-radius:16px;
+        background:transparent;
+        overflow:hidden;
+    "></div>
+
+    <div id="graph-status" style="
+        color:#BFB7D8;
+        font-family:sans-serif;
+        font-size:13px;
+        margin-top:8px;
+    ">
+        Listening for new scans...
+    </div>
+
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <script>
+    const csvUrl = "{url}";
+
+    const palette = [
+        "#2ECC71",
+        "#F5A623",
+        "#9B59B6",
+        "#3498DB",
+        "#FF6B6B",
+        "#1ABC9C",
+        "#E67E22",
+        "#E84393"
+    ];
+
+    const nodes = new vis.DataSet([]);
+    const edges = new vis.DataSet([]);
+
+    const seenNodes = new Set();
+    const seenEdges = new Set();
+
+    const container = document.getElementById("graph-container");
+
+    const data = {{
+        nodes: nodes,
+        edges: edges
+    }};
+
+    const options = {{
+        autoResize: true,
+
+        layout: {{
+            improvedLayout: true,
+            randomSeed: 12
+        }},
+
+        nodes: {{
+            shape: "dot",
+            size: 20,
+            color: {{
+                background: "#123C4A",
+                border: "#48C6C8",
+                highlight: {{
+                    background: "#1F6F7A",
+                    border: "#8BE9E9"
+                }}
+            }},
+            font: {{
+                color: "#F7F1E8",
+                size: 16,
+                face: "sans-serif",
+                strokeWidth: 0
+            }},
+            borderWidth: 2
+        }},
+
+        edges: {{
+            width: 2,
+            arrows: {{
+                to: {{
+                    enabled: true,
+                    scaleFactor: 0.65
+                }}
+            }},
+            font: {{
+                color: "#F7F1E8",
+                size: 11,
+                strokeWidth: 0,
+                align: "middle"
+            }},
+            smooth: {{
+                enabled: true,
+                type: "continuous",
+                roundness: 0.4
+            }}
+        }},
+
+        physics: {{
+            enabled: true,
+            solver: "repulsion",
+            repulsion: {{
+                nodeDistance: 100,
+                centralGravity: 0.012,
+                springLength: 75,
+                springConstant: 0.07,
+                damping: 0.34
+            }},
+            stabilization: {{
+                enabled: true,
+                iterations: 160,
+                updateInterval: 25,
+                fit: true
+            }},
+            minVelocity: 0.5
+        }},
+
+        interaction: {{
+            hover: true,
+            tooltipDelay: 100,
+            dragNodes: true,
+            zoomView: true,
+            dragView: true
+        }}
+    }};
+
+    const network = new vis.Network(container, data, options);
+
+    function getCardTypeColours(rows) {{
+        const cardTypes = [...new Set(rows.map(r => r.CardType).filter(Boolean))].sort();
+        const colours = {{}};
+
+        cardTypes.forEach((type, index) => {{
+            colours[type] = palette[index % palette.length];
+        }});
+
+        return colours;
+    }}
+
+    function deriveEdges(rows) {{
+        const grouped = {{}};
+
+        rows.forEach(row => {{
+            if (!row.Timestamp || !row.AppId || !row.CardId || !row.CardType) return;
+
+            if (!grouped[row.CardId]) {{
+                grouped[row.CardId] = [];
+            }}
+
+            grouped[row.CardId].push(row);
+        }});
+
+        const derived = [];
+
+        Object.keys(grouped).forEach(cardId => {{
+            const group = grouped[cardId].sort((a, b) => {{
+                return new Date(a.Timestamp) - new Date(b.Timestamp);
+            }});
+
+            for (let i = 1; i < group.length; i++) {{
+                const previous = group[i - 1];
+                const current = group[i];
+
+                if (previous.AppId !== current.AppId) {{
+                    derived.push({{
+                        source: previous.AppId,
+                        target: current.AppId,
+                        cardId: cardId,
+                        cardType: current.CardType,
+                        timestamp: current.Timestamp
+                    }});
+                }}
+            }}
+        }});
+
+        return derived;
+    }}
+
+    async function updateGraph() {{
+        try {{
+            const response = await fetch(csvUrl + "&cacheBust=" + Date.now());
+            const csvText = await response.text();
+
+            const parsed = Papa.parse(csvText, {{
+                header: true,
+                skipEmptyLines: true
+            }});
+
+            const rows = parsed.data;
+            const cardTypeColours = getCardTypeColours(rows);
+            const derivedEdges = deriveEdges(rows);
+
+            rows.forEach(row => {{
+                if (!row.AppId) return;
+
+                if (!seenNodes.has(row.AppId)) {{
+                    seenNodes.add(row.AppId);
+
+                    nodes.add({{
+                        id: row.AppId,
+                        label: row.AppId
+                    }});
+                }}
+            }});
+
+            derivedEdges.forEach(edge => {{
+                const edgeId = edge.source + "__" + edge.target + "__" + edge.cardId + "__" + edge.timestamp;
+
+                if (!seenEdges.has(edgeId)) {{
+                    seenEdges.add(edgeId);
+
+                    edges.add({{
+                        id: edgeId,
+                        from: edge.source,
+                        to: edge.target,
+                        label: edge.cardId,
+                        color: {{
+                            color: cardTypeColours[edge.cardType] || "#F5A623"
+                        }},
+                        title: edge.cardType + " card " + edge.cardId
+                    }});
+                }}
+            }});
+
+            document.getElementById("graph-status").innerHTML =
+                "Live graph connected " +
+                " · Last checked: " + new Date().toLocaleTimeString();
+
+        }} catch (error) {{
+            document.getElementById("graph-status").innerHTML =
+                "Could not update graph: " + error;
+        }}
+    }}
+
+    updateGraph();
+    setInterval(updateGraph, 3000);
+    </script>
+    """,
+    height=600,
+)
 
 st.subheader("Emerging pro-social insights")
 
